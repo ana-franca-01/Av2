@@ -1,0 +1,21 @@
+# PostgreSQL para desenvolvimento e testes. Funciona igual no Windows (Docker Desktop) e no Ubuntu.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: greencode-db
+    environment:
+      POSTGRES_USER: greencode
+      POSTGRES_PASSWORD: greencode
+      POSTGRES_DB: greencode
+    ports:
+      - "5433:5432"
+    volumes:
+      - greencode-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U greencode"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  greencode-pg:

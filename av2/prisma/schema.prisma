@@ -1,0 +1,217 @@
+// greencode — schema relacional (AV2).
+// Replica o modelo de domínio da AV1: Organizacao 1—0..1 Contrato, Organizacao 1—N Lote,
+// Lote 1—N Equipamento, Equipamento 1—N Movimentacao. Todo modelo mutável tem `versao`
+// pra controle de concorrência otimista.
+
+generator client {
+  provider = "prisma-client-js"
+  // native = máquina de quem compila; windows e debian-openssl-3.0.x cobrem Windows 10+ e Ubuntu 24.04+/derivados
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Papel {
+  ADMIN
+  CADASTRO
+  ALMOXARIFADO
+  AUDITOR
+}
+
+enum TipoOrganizacao {
+  VAREJO
+  HOSPITAL
+  UNIVERSIDADE
+  BANCO
+  INDUSTRIA
+  GOVERNO
+  OUTRO
+}
+
+enum TipoEquipamento {
+  COMPUTADOR
+  SERVIDOR
+  MONITOR
+  TELECOM
+  PERIFERICO
+  OUTRO
+}
+
+enum EstadoFisico {
+  EXCELENTE
+  BOM
+  REGULAR
+  RUIM
+  SUCATA
+}
+
+enum StatusEquipamento {
+  RECEBIDO
+  EM_TRIAGEM
+  TRIADO
+  EM_DESMONTE
+  REUTILIZADO
+  RECICLADO
+  DESCARTADO
+}
+
+enum ClasseTriagem {
+  REUTILIZAVEL
+  RECICLAVEL
+  DESCARTE_SEGURO
+}
+
+enum TipoMovimentacao {
+  REGISTRO
+  STATUS
+  ESTADO
+  TRIAGEM
+}
+
+model Usuario {
+  id           String    @id @default(uuid()) @db.Uuid
+  nome         String    @unique @db.VarChar(32)
+  papel        Papel
+  senhaHash    String    @map("senha_hash")
+  ativo        Boolean   @default(true)
+  falhasLogin  Int       @default(0) @map("falhas_login")
+  bloqueadoAte DateTime? @map("bloqueado_ate") @db.Timestamptz(3)
+  criadoEm     DateTime  @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm DateTime  @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao       Int       @default(1)
+
+  @@map("usuarios")
+}
+
+model Parametro {
+  chave         String   @id @db.VarChar(60)
+  valor         Decimal  @db.Decimal(9, 4)
+  atualizadoEm  DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  atualizadoPor String   @map("atualizado_por") @db.VarChar(32)
+  versao        Int      @default(1)
+
+  @@map("parametros")
+}
+
+model Organizacao {
+  id           String          @id @default(uuid()) @db.Uuid
+  codigo       String          @unique @db.VarChar(10)
+  cnpj         String          @unique @db.Char(14)
+  nome         String          @db.VarChar(120)
+  tipo         TipoOrganizacao
+  ativa        Boolean         @default(true)
+  criadoEm     DateTime        @default(now()) @map("criado_em") @db.Timestamptz(3)
+  criadoPor    String          @map("criado_por") @db.VarChar(32)
+  atualizadoEm DateTime        @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao       Int             @default(1)
+
+  contrato Contrato?
+  lotes    Lote[]
+
+  @@map("organizacoes")
+}
+
+model Contrato {
+  id                      String   @id @default(uuid()) @db.Uuid
+  numero                  String   @unique @db.VarChar(20)
+  organizacaoId           String   @unique @map("organizacao_id") @db.Uuid
+  inicio                  DateTime @db.Date
+  fim                     DateTime @db.Date
+  prazoArmazenamentoDias  Int      @map("prazo_armazenamento_dias")
+  descricao               String   @default("") @db.VarChar(500)
+  // cláusulas são semiestruturadas (lista de {titulo, texto}); JSONB evita uma tabela só pra isso
+  clausulas               Json     @default("[]") @db.JsonB
+  criadoEm                DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  atualizadoEm            DateTime @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao                  Int      @default(1)
+
+  organizacao Organizacao @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+
+  @@map("contratos")
+}
+
+model Lote {
+  id             String   @id @default(uuid()) @db.Uuid
+  codigo         String   @unique @db.VarChar(12)
+  organizacaoId  String   @map("organizacao_id") @db.Uuid
+  notaFiscal     String   @map("nota_fiscal") @db.VarChar(9)
+  transportadora String   @db.VarChar(60)
+  dataEntrada    DateTime @map("data_entrada") @db.Date
+  criadoEm       DateTime @default(now()) @map("criado_em") @db.Timestamptz(3)
+  criadoPor      String   @map("criado_por") @db.VarChar(32)
+  versao         Int      @default(1)
+
+  organizacao  Organizacao   @relation(fields: [organizacaoId], references: [id], onDelete: Restrict)
+  equipamentos Equipamento[]
+
+  // NF é única por organização (regra da AV1, agora garantida pelo banco)
+  @@unique([organizacaoId, notaFiscal])
+  @@index([dataEntrada])
+  @@map("lotes")
+}
+
+model Equipamento {
+  id                  String            @id @default(uuid()) @db.Uuid
+  codigo              String            @unique @db.VarChar(12)
+  codigoBarrasInterno String            @unique @map("codigo_barras_interno") @db.Char(11)
+  loteId              String            @map("lote_id") @db.Uuid
+  tipo                TipoEquipamento
+  descricao           String            @db.VarChar(120)
+  serie               String?           @unique @db.VarChar(40)
+  estado              EstadoFisico      @default(BOM)
+  status              StatusEquipamento @default(RECEBIDO)
+  valorAquisicao      Decimal?          @map("valor_aquisicao") @db.Decimal(14, 2)
+  anoFabricacao       Int?              @map("ano_fabricacao")
+  triagemClasse       ClasseTriagem?    @map("triagem_classe")
+  triagemResponsavel  String?           @map("triagem_responsavel") @db.VarChar(32)
+  triagemEm           DateTime?         @map("triagem_em") @db.Timestamptz(3)
+  triagemObservacao   String?           @map("triagem_observacao") @db.VarChar(500)
+  criadoEm            DateTime          @default(now()) @map("criado_em") @db.Timestamptz(3)
+  criadoPor           String            @map("criado_por") @db.VarChar(32)
+  atualizadoEm        DateTime          @updatedAt @map("atualizado_em") @db.Timestamptz(3)
+  versao              Int               @default(1)
+
+  lote          Lote           @relation(fields: [loteId], references: [id], onDelete: Restrict)
+  movimentacoes Movimentacao[]
+
+  @@index([loteId])
+  @@index([status])
+  @@map("equipamentos")
+}
+
+// Histórico imutável (substitui o journal da AV1): um trigger no banco bloqueia UPDATE/DELETE.
+model Movimentacao {
+  // sequencial de propósito: a ordem de inserção é a ordem do histórico
+  id            BigInt             @id @default(autoincrement())
+  equipamentoId String             @map("equipamento_id") @db.Uuid
+  ts            DateTime           @default(now()) @db.Timestamptz(3)
+  ator          String             @db.VarChar(32)
+  tipo          TipoMovimentacao
+  statusDe      StatusEquipamento? @map("status_de")
+  statusPara    StatusEquipamento  @map("status_para")
+  estadoDe      EstadoFisico?      @map("estado_de")
+  estadoPara    EstadoFisico       @map("estado_para")
+  justificativa String?            @db.VarChar(500)
+  observacao    String?            @db.VarChar(500)
+
+  equipamento Equipamento @relation(fields: [equipamentoId], references: [id], onDelete: Restrict)
+
+  @@index([equipamentoId, ts])
+  @@map("movimentacoes")
+}
+
+// Trilha de auditoria (também imutável). Gravada na mesma transação da operação de negócio.
+model Auditoria {
+  id       BigInt   @id @default(autoincrement())
+  ts       DateTime @default(now()) @db.Timestamptz(3)
+  ator     String   @db.VarChar(32)
+  operacao String   @db.VarChar(40)
+  resumo   String   @db.VarChar(500)
+
+  @@index([ts])
+  @@index([ator])
+  @@map("auditoria")
+}

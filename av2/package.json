@@ -1,0 +1,44 @@
+{
+  "name": "greencode-api",
+  "version": "2.0.0",
+  "description": "greencode (AV2) — servidor monolítico de logística reversa: Node.js + TypeScript + Fastify + Prisma + PostgreSQL",
+  "main": "dist/src/server.js",
+  "scripts": {
+    "build": "prisma generate && tsc",
+    "start": "node dist/src/server.js",
+    "dev": "tsx watch src/server.ts",
+    "db:up": "docker compose up -d db",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset",
+    "test": "npm run build && node --test \"dist/test/unit/**/*.test.js\"",
+    "test:e2e": "npm run build && node dist/test/preparar-banco-teste.js && node --test --test-concurrency=1 \"dist/test/e2e/**/*.test.js\""
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@fastify/jwt": "^10.2.0",
+    "@fastify/swagger": "^9.9.0",
+    "@fastify/swagger-ui": "^6.1.0",
+    "@prisma/client": "~6.19.0",
+    "bcryptjs": "^3.0.2",
+    "fastify": "^5.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prisma": "~6.19.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true
+  }
+}
